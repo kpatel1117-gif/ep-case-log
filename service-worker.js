@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ep-case-log-v1';
+const CACHE_NAME = 'ep-case-log-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -24,10 +24,25 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).catch(() => caches.match('./index.html'));
-    })
-  );
+  const req = event.request;
+  const isHTML = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
+    // Network-first for the app shell: always try to get the latest version.
+    // Falls back to cache only when offline.
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
+    );
+  } else {
+    // Cache-first for static assets (icons, manifest) since they rarely change.
+    event.respondWith(
+      caches.match(req).then((cached) => cached || fetch(req))
+    );
+  }
 });
